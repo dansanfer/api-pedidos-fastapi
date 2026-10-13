@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Pedidos - Demonstração</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 24px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 20px; }
+    .card { background: #1e293b; padding: 20px; border-radius: 10px; border: 1px solid #334155; }
+    h2, h3 { margin-top: 0; color: #38bdf8; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    input, button, select { padding: 10px 14px; border-radius: 6px; border: 1px solid #475569; font-size: 14px; }
+    input, select { background: #0f172a; color: #fff; width: 100%; }
+    button { background: #0284c7; color: #fff; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #334155; }
+    button.small { padding: 6px 12px; font-size: 12px; }
+    button.btn-concluir { background: #16a34a; }
+    button.btn-cancelar { background: #dc2626; }
+    
+    .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #0284c7; }
+    .status-finalizado { background: #16a34a; }
+    .status-cancelado { background: #dc2626; }
+    
+    .pedido-box { background: #0f172a; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #334155; }
+    .alert { padding: 10px; border-radius: 6px; font-size: 14px; margin-top: 10px; }
+    .error { background: #991b1b; color: #fee2e2; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h2>🍕 Painel de Demonstração - API FastAPI</h2>
+      <p style="color: #94a3b8; margin: 0;">Interface direta para teste das rotas de autenticação e pedidos.</p>
+    </div>
+
+    <!-- PAINEL DE LOGIN -->
+    <div id="auth-panel" class="card">
+      <h3>1. Autenticação</h3>
+      <div class="grid">
+        <input type="email" id="email" placeholder="E-mail" value="danielandsanfer@gmail.com">
+        <input type="password" id="senha" placeholder="Senha" value="123456">
+      </div>
+      <div style="margin-top: 14px;">
+        <button onclick="fazerLogin()">Fazer Login</button>
+      </div>
+      <div id="auth-msg"></div>
+    </div>
+
+    <!-- PAINEL PRINCIPAL -->
+    <div id="app-panel" class="card hidden">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="color: #94a3b8;">Logado como: </span>
+          <strong id="user-info" style="color: #38bdf8;"></strong>
+        </div>
+        <button class="secondary" onclick="fazerLogout()">Sair</button>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid #334155; margin: 20px 0;">
+
+      <!-- CRIAR PEDIDO E ADICIONAR ITEM -->
+      <h3>2. Criar e Gerenciar Pedidos</h3>
+      <div style="margin-bottom: 20px;">
+        <button onclick="criarNovoPedido()">+ Gerar Novo Pedido</button>
+      </div>
+
+      <div style="background: #0f172a; padding: 16px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 24px;">
+        <h4 style="margin: 0 0 12px 0; color: #e2e8f0;">Adicionar Item a um Pedido Existente:</h4>
+        <div class="grid" style="grid-template-columns: 1fr 2fr 1fr 1fr; gap: 8px;">
+          <input type="number" id="item-pedido-id" placeholder="Nº do Pedido (ex: 1)">
+          <input type="text" id="item-sabor" placeholder="Sabor (ex: 4 Queijos)">
+          <input type="text" id="item-tamanho" placeholder="Tamanho (ex: P, M, G)" value="G">
+          <input type="number" step="0.5" id="item-preco" placeholder="Preço (R$)">
+        </div>
+        <div style="margin-top: 12px;">
+          <button onclick="adicionarItem()">Adicionar Item ao Pedido</button>
+        </div>
+      </div>
+
+      <!-- HISTÓRICO DE PEDIDOS COM BOTÕES DE AÇÃO -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0;">3. Histórico de Pedidos</h3>
+        <button class="secondary" onclick="carregarMeusPedidos()">Atualizar Lista</button>
+      </div>
+      <div id="lista-pedidos">Carregando pedidos...</div>
+    </div>
+  </div>
+
+  <script>
+    let token = "";
+
+    async function fazerLogin() {
+      const email = document.getElementById("email").value;
+      const senha = document.getElementById("senha").value;
+      const msg = document.getElementById("auth-msg");
+
+      try {
+        const resp = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, senha })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          msg.innerHTML = `<div class="alert error">${data.detail || "Erro no login"}</div>`;
+          return;
+        }
+
+        token = data.access_token;
+        msg.innerHTML = "";
+        document.getElementById("auth-panel").classList.add("hidden");
+        document.getElementById("app-panel").classList.remove("hidden");
+
+        await obterPerfil();
+        await carregarMeusPedidos();
+      } catch (err) {
+        msg.innerHTML = `<div class="alert error">Falha na conexão com o servidor</div>`;
+      }
+    }
+
+    async function obterPerfil() {
+      const resp = await fetch("/auth/me", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (resp.ok) {
+        const user = await resp.json();
+        document.getElementById("user-info").innerText = `${user.nome} (${user.email})`;
+      }
+    }
+
+    async function criarNovoPedido() {
+      const resp = await fetch("/pedidos/pedido", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await resp.json();
+      carregarMeusPedidos();
+    }
+
+    async function adicionarItem() {
+      const pedidoId = document.getElementById("item-pedido-id").value;
+      const sabor = document.getElementById("item-sabor").value;
+      const tamanho = document.getElementById("item-tamanho").value;
+      const preco = parseFloat(document.getElementById("item-preco").value);
+
+      if (!pedidoId || !sabor || !preco) {
+        alert("Preencha o número do pedido, o sabor e o preço!");
+        return;
+      }
+
+      const resp = await fetch(`/pedidos/pedido/adicionar-item/${pedidoId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          quantidade: 1,
+          sabor: sabor,
+          tamanho: tamanho || "G",
+          preco_unitario: preco
+        })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.detail || "Erro ao adicionar item");
+      } else {
+        alert(`Item '${sabor}' adicionado ao Pedido #${pedidoId}! Novo total: R$ ${data.preco_pedido.toFixed(2)}`);
+        // Limpa os campos após adicionar
+        document.getElementById("item-sabor").value = "";
+        document.getElementById("item-preco").value = "";
+        carregarMeusPedidos();
+      }
+    }
+
+    function selecionarParaAdicionar(id) {
+      document.getElementById("item-pedido-id").value = id;
+      document.getElementById("item-sabor").focus();
+    }
+
+    async function concluirPedido(pedidoId) {
+      if (!confirm(`Deseja concluir o pedido #${pedidoId}?`)) return;
+
+      const resp = await fetch(`/pedidos/pedido/finalizar/${pedidoId}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (resp.ok) {
+        carregarMeusPedidos();
+      } else {
+        const data = await resp.json();
+        alert(data.detail || "Erro ao concluir pedido");
+      }
+    }
+
+    async function cancelarPedido(pedidoId) {
+      if (!confirm(`Deseja cancelar o pedido #${pedidoId}?`)) return;
+
+      const resp = await fetch(`/pedidos/pedido/cancelar/${pedidoId}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (resp.ok) {
+        carregarMeusPedidos();
+      } else {
+        const data = await resp.json();
+        alert(data.detail || "Erro ao cancelar pedido");
+      }
+    }
+
+    function getBadgeClass(status) {
+      if (status === 'FINALIZADO') return 'status-finalizado';
+      if (status === 'CANCELADO') return 'status-cancelado';
+      return '';
+    }
+
+    async function carregarMeusPedidos() {
+      const container = document.getElementById("lista-pedidos");
+      const resp = await fetch("/pedidos/meus-pedidos", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await resp.json();
+
+      if (!data.pedidos || data.pedidos.length === 0) {
+        container.innerHTML = "<p style='color: #64748b;'>Nenhum pedido criado até o momento.</p>";
+        return;
+      }
+
+      container.innerHTML = data.pedidos.map(p => `
+        <div class="pedido-box">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong style="font-size: 16px;">Pedido #${p.id}</strong>
+            <span class="status-badge ${getBadgeClass(p.status)}">${p.status}</span>
+          </div>
+
+          <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <span style="color: #94a3b8;">Total: <strong style="color: #4ade80; font-size: 18px;">R$ ${(p.preco || 0).toFixed(2)}</strong></span>
+            
+            <div style="display: flex; gap: 8px;">
+              ${p.status === 'PENDENTE' ? `
+                <button class="small secondary" onclick="selecionarParaAdicionar(${p.id})">+ Preencher Item</button>
+                <button class="small btn-concluir" onclick="concluirPedido(${p.id})">✔ Concluir</button>
+                <button class="small btn-cancelar" onclick="cancelarPedido(${p.id})">✖ Cancelar</button>
+              ` : `
+                <span style="color: #64748b; font-size: 13px;">Pedido encerrado</span>
+              `}
+            </div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function fazerLogout() {
+      token = "";
+      document.getElementById("auth-panel").classList.remove("hidden");
+      document.getElementById("app-panel").classList.add("hidden");
+    }
+  </script>
+</body>
+</html>
